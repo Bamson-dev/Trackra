@@ -333,6 +333,9 @@
         }
 
         const totalUsd = tokens.reduce((a, t) => a + Number(t.usdValue || 0), 0);
+        // #region agent log
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-3',hypothesisId:'N4',location:'js/app.js:326',message:'token valuation snapshot',data:{network:resolvedNetwork,tokenCount:tokens.length,pricedTokenCount:tokens.filter((t)=>Number(t.usdPrice||0)>0).length,nonZeroBalanceCount:tokens.filter((t)=>Number(t.balance||0)>0).length,sampleSymbols:tokens.slice(0,5).map((t)=>String(t.symbol||'')),totalUsd:Number(totalUsd||0)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         const usdtUsd = tokens
           .filter((token) => String(token.symbol || "").toUpperCase() === "USDT")
           .reduce((sum, token) => sum + Number(token.usdValue || 0), 0);
