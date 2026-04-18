@@ -158,6 +158,9 @@
 
   async function setupTracker() {
     const form = document.getElementById("trackForm");
+    // #region agent log
+    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H1',location:'js/app.js:161',message:'setupTracker invoked',data:{hasForm:Boolean(form)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!form) return;
 
     const walletInput = document.getElementById("walletInput");
@@ -266,6 +269,9 @@
       if (inlineError) inlineError.hidden = true;
       syncNetworkWithAddress(address);
       const cleanAddress = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
+      // #region agent log
+      fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H2',location:'js/app.js:269',message:'runTrack entry',data:{addressLength:cleanAddress.length,networkArg:String(network||''),selectValue:String(networkSelect?.value||'')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!cleanAddress) {
         if (inlineError) {
           inlineError.hidden = true;
@@ -275,6 +281,9 @@
       }
       const resolvedNetwork = resolveNetwork(cleanAddress, network);
       lastRequest = { address: cleanAddress, network: resolvedNetwork };
+      // #region agent log
+      fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H3',location:'js/app.js:279',message:'validation decision',data:{resolvedNetwork,isValid:validateWallet(cleanAddress,resolvedNetwork)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!validateWallet(cleanAddress, resolvedNetwork)) {
         if (inlineError) {
           inlineError.textContent = `⚠ ${getAddressHint(resolvedNetwork, cleanAddress)}`;
@@ -284,6 +293,9 @@
       }
 
       if (typeof window.TrackraAPI === "undefined" || typeof window.TrackraUI === "undefined") {
+        // #region agent log
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H4',location:'js/app.js:289',message:'dependency missing',data:{hasAPI:typeof window.TrackraAPI!=="undefined",hasUI:typeof window.TrackraUI!=="undefined"},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (errorTitle && errorBody) {
           errorTitle.textContent = "Scripts did not load";
           errorBody.textContent =
@@ -336,8 +348,14 @@
         window.TrackraUI.renderTokens(tokens, ngnRate);
         window.TrackraUI.renderTransactions(txs, cleanAddress, ngnRate);
         if (updatedTime) updatedTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        // #region agent log
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H5',location:'js/app.js:341',message:'runTrack success',data:{tokenCount:tokens.length,txCount:txs.length,totalUsd:Number(totalUsd||0)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         setState("results");
       } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H5',location:'js/app.js:345',message:'runTrack caught error',data:{errorMessage:String(err&&err.message?err.message:err)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         if (errorTitle && errorBody) {
           errorTitle.textContent = "Unable to load this wallet right now";
           const fileProto = window.location.protocol === "file:";
@@ -353,6 +371,9 @@
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
+      // #region agent log
+      fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial',hypothesisId:'H1',location:'js/app.js:358',message:'form submit fired',data:{addressLength:address.length,selectedNetwork:String(networkSelect?.value||'')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!address) {
         if (inlineError) {
           inlineError.hidden = true;
