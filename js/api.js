@@ -104,7 +104,11 @@ async function fetchMoralisTransactions(address, network) {
 
 async function fetchSolanaBalance(address) {
   const json = await postSolanaRpc("getBalance", [address]);
-  return (json?.result?.value || 0) / 1e9;
+  const balance = (json?.result?.value || 0) / 1e9;
+  // #region agent log
+  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N2',location:'js/api.js:109',message:'solana balance fetched',data:{addressPrefix:String(address||'').slice(0,6),balance},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return balance;
 }
 
 async function fetchSolanaTokens(address) {
@@ -113,7 +117,11 @@ async function fetchSolanaTokens(address) {
     { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
     { encoding: "jsonParsed" }
   ]);
-  return json?.result?.value || [];
+  const accounts = json?.result?.value || [];
+  // #region agent log
+  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N2',location:'js/api.js:119',message:'solana token accounts fetched',data:{addressPrefix:String(address||'').slice(0,6),accountCount:accounts.length},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return accounts;
 }
 
 async function fetchSolanaTransactions(address) {
@@ -176,8 +184,14 @@ async function fetchSolanaSpotPrices() {
       JUP: Number(json?.["jupiter-exchange-solana"]?.usd || 0),
       BONK: Number(json?.bonk?.usd || 0)
     };
+    // #region agent log
+    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N3',location:'js/api.js:181',message:'solana prices fetched',data:{SOL:solPriceCache.SOL,USDT:solPriceCache.USDT,USDC:solPriceCache.USDC},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   } catch {
     solPriceCache = { SOL: 0, USDT: 1, USDC: 1, MSOL: 0, JUP: 0, BONK: 0 };
+    // #region agent log
+    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N3',location:'js/api.js:186',message:'solana prices fallback used',data:{SOL:0,USDT:1,USDC:1},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   }
   return solPriceCache;
 }
