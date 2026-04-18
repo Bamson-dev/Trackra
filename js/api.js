@@ -199,24 +199,34 @@ async function fetchSolanaSpotPrices() {
 async function fetchSolanaMintPrices(mints) {
   const uniqueMints = [...new Set((mints || []).filter(Boolean))];
   if (!uniqueMints.length) return {};
+  const endpoints = [
+    `https://lite-api.jup.ag/price/v2?ids=${encodeURIComponent(uniqueMints.join(","))}`,
+    `https://price.jup.ag/v6/price?ids=${encodeURIComponent(uniqueMints.join(","))}`
+  ];
   try {
-    const url = new URL("https://price.jup.ag/v4/price");
-    url.searchParams.set("ids", uniqueMints.join(","));
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Jupiter mint price fetch failed (${res.status})`);
-    const json = await res.json();
-    const data = json?.data || {};
-    const byMint = {};
-    uniqueMints.forEach((mint) => {
-      byMint[mint] = Number(data?.[mint]?.price || 0);
-    });
-    // #region agent log
-    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix',hypothesisId:'F1',location:'js/api.js:221',message:'solana mint prices fetched',data:{requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return byMint;
+    let lastErr = null;
+    for (const endpoint of endpoints) {
+      try {
+        const res = await fetch(endpoint);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const data = json?.data || {};
+        const byMint = {};
+        uniqueMints.forEach((mint) => {
+          byMint[mint] = Number(data?.[mint]?.price || 0);
+        });
+        // #region agent log
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-2',hypothesisId:'F2',location:'js/api.js:227',message:'solana mint prices fetched',data:{endpoint,requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return byMint;
+      } catch (e) {
+        lastErr = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+    throw lastErr || new Error("All Jupiter endpoints failed");
   } catch (e) {
     // #region agent log
-    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix',hypothesisId:'F1',location:'js/api.js:226',message:'solana mint prices failed',data:{errorMessage:String(e&&e.message?e.message:e),requested:uniqueMints.length},timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-2',hypothesisId:'F2',location:'js/api.js:236',message:'solana mint prices failed',data:{errorMessage:String(e&&e.message?e.message:e),requested:uniqueMints.length},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
     return {};
   }
