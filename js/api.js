@@ -8,9 +8,51 @@ const CHAIN_MAP = {
   polygon: "polygon"
 };
 
+/** Public RPC — used when Helius rejects the browser origin (common on GitHub Pages until the key’s domain allowlist includes your site). */
+const PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+
 let ngnRateCache = null;
 let solPriceCache = null;
 let evmNativePriceCache = null;
+
+/**
+ * POST JSON-RPC to Helius first, then fall back to Solana public RPC (same request body).
+ */
+async function postSolanaRpc(method, params) {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: "trackra",
+    method,
+    params
+  });
+  const endpoints = [
+    `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(HELIUS_KEY)}`,
+    PUBLIC_SOLANA_RPC
+  ];
+  let lastErr = null;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        lastErr = new Error(`Solana RPC HTTP ${res.status}`);
+        continue;
+      }
+      if (json?.error) {
+        lastErr = new Error(json.error.message || "Solana RPC error");
+        continue;
+      }
+      return json;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr || new Error("Solana RPC unavailable");
+}
 
 async function getNgnRate() {
   if (ngnRateCache) return ngnRateCache;
@@ -30,7 +72,13 @@ async function fetchMoralisTokens(address, network) {
   const url = new URL(`https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens`);
   url.searchParams.set("chain", chain);
   const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
-  if (!res.ok) throw new Error(`Token fetch failed (${res.status})`);
+  if (!res.ok) {
+    const originHint =
+      res.status === 401 || res.status === 403
+        ? " In Moralis, open this API key → allowed URLs → add your live site (e.g. https://yourname.github.io)."
+        : "";
+    throw new Error(`Token fetch failed (${res.status}).${originHint}`);
+  }
   const json = await res.json();
   /* Moralis returns { result: [...] } — not a bare array */
   if (Array.isArray(json)) return json;
@@ -43,46 +91,28 @@ async function fetchMoralisTransactions(address, network) {
   url.searchParams.set("chain", chain);
   url.searchParams.set("limit", "20");
   const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
-  if (!res.ok) throw new Error("Transaction fetch failed");
+  if (!res.ok) {
+    const originHint =
+      res.status === 401 || res.status === 403
+        ? " In Moralis, allow your GitHub Pages URL for this API key."
+        : "";
+    throw new Error(`Transaction fetch failed (${res.status}).${originHint}`);
+  }
   const json = await res.json();
   return json?.result || [];
 }
 
 async function fetchSolanaBalance(address) {
-  const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "trackra",
-      method: "getBalance",
-      params: [address]
-    })
-  });
-  if (!res.ok) throw new Error("SOL balance fetch failed");
-  const json = await res.json();
-  if (json?.error) throw new Error(json.error.message || "SOL balance RPC error");
+  const json = await postSolanaRpc("getBalance", [address]);
   return (json?.result?.value || 0) / 1e9;
 }
 
 async function fetchSolanaTokens(address) {
-  const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "trackra",
-      method: "getTokenAccountsByOwner",
-      params: [
-        address,
-        { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
-        { encoding: "jsonParsed" }
-      ]
-    })
-  });
-  if (!res.ok) throw new Error("Sol token fetch failed");
-  const json = await res.json();
-  if (json?.error) throw new Error(json.error.message || "Sol token RPC error");
+  const json = await postSolanaRpc("getTokenAccountsByOwner", [
+    address,
+    { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+    { encoding: "jsonParsed" }
+  ]);
   return json?.result?.value || [];
 }
 
@@ -90,9 +120,23 @@ async function fetchSolanaTransactions(address) {
   const url = new URL(`https://api.helius.xyz/v0/addresses/${address}/transactions`);
   url.searchParams.set("api-key", HELIUS_KEY);
   url.searchParams.set("limit", "20");
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Sol tx fetch failed");
-  return res.json();
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const hint =
+        res.status === 401 || res.status === 403
+          ? ` (${res.status}: add your GitHub Pages URL to the Helius API key allowed domains, or txs stay empty.)`
+          : ` (HTTP ${res.status})`;
+      throw new Error(`Sol tx fetch failed${hint}`);
+    }
+    return res.json();
+  } catch (e) {
+    /* Do not fail the whole tracker — balances/tokens still work via RPC fallback */
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[Trackra] Transaction history unavailable:", e);
+    }
+    return [];
+  }
 }
 
 async function fetchEvmNativeSpotPrices() {
