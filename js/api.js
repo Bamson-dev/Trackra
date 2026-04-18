@@ -196,40 +196,64 @@ async function fetchSolanaSpotPrices() {
   return solPriceCache;
 }
 
+/**
+ * DexScreener allows comma-separated mints (up to ~30 per request). CORS-friendly for public pages.
+ */
+async function fetchDexscreenerSolPrices(mints) {
+  const byMint = {};
+  for (let i = 0; i < mints.length; i += 30) {
+    const chunk = mints.slice(i, i + 30);
+    const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.join(",")}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const pairs = json?.pairs || [];
+      pairs.forEach((p) => {
+        const addr = p.baseToken?.address;
+        if (!addr) return;
+        const px = Number(p.priceUsd || 0);
+        if (px <= 0) return;
+        if (!byMint[addr] || px > byMint[addr]) byMint[addr] = px;
+      });
+    } catch {
+      /* next chunk */
+    }
+  }
+  return byMint;
+}
+
 async function fetchSolanaMintPrices(mints) {
   const uniqueMints = [...new Set((mints || []).filter(Boolean))];
   if (!uniqueMints.length) return {};
-  const endpoints = [
-    `https://lite-api.jup.ag/price/v2?ids=${encodeURIComponent(uniqueMints.join(","))}`,
-    `https://price.jup.ag/v6/price?ids=${encodeURIComponent(uniqueMints.join(","))}`
-  ];
+  /* Do NOT encode the whole ids string — encoding commas breaks Jupiter (single malformed id → 404 / weird paths). Base58 mints are URL-safe. */
+  const jupUrl = `https://lite-api.jup.ag/price/v2?ids=${uniqueMints.join(",")}`;
+  const byMint = {};
   try {
-    let lastErr = null;
-    for (const endpoint of endpoints) {
-      try {
-        const res = await fetch(endpoint);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        const data = json?.data || {};
-        const byMint = {};
-        uniqueMints.forEach((mint) => {
-          byMint[mint] = Number(data?.[mint]?.price || 0);
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-2',hypothesisId:'F2',location:'js/api.js:227',message:'solana mint prices fetched',data:{endpoint,requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        return byMint;
-      } catch (e) {
-        lastErr = e instanceof Error ? e : new Error(String(e));
-      }
+    const res = await fetch(jupUrl);
+    if (res.ok) {
+      const json = await res.json();
+      const data = json?.data || {};
+      uniqueMints.forEach((mint) => {
+        const row = data?.[mint];
+        const p = Number(row?.price ?? row?.usdPrice ?? 0);
+        byMint[mint] = p;
+      });
     }
-    throw lastErr || new Error("All Jupiter endpoints failed");
-  } catch (e) {
-    // #region agent log
-    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-2',hypothesisId:'F2',location:'js/api.js:236',message:'solana mint prices failed',data:{errorMessage:String(e&&e.message?e.message:e),requested:uniqueMints.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return {};
+  } catch {
+    /* fall through to DexScreener */
   }
+  const missing = uniqueMints.filter((m) => !Number(byMint[m] || 0));
+  if (missing.length) {
+    const dex = await fetchDexscreenerSolPrices(missing);
+    missing.forEach((m) => {
+      if (Number(dex[m] || 0) > 0) byMint[m] = dex[m];
+    });
+  }
+  // #region agent log
+  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-3',hypothesisId:'F3',location:'js/api.js:248',message:'solana mint prices merged',data:{requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+  return byMint;
 }
 
 window.TrackraAPI = {
