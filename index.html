@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trackra - Track crypto in Naira. Instantly.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+</head>
+<body>
+  <div id="fileProtoBanner" class="file-protocol-banner" hidden role="alert">
+    <strong>file://</strong> cannot load APIs reliably. Run a local server in this folder:
+    <code>python3 -m http.server 8080</code>
+    then open <code>http://localhost:8080/</code> or <code>http://localhost:8080/tracker.html</code>. IDE “preview” may log a frame warning for file URLs; use localhost instead.
+  </div>
+  <div class="menu-backdrop" id="menuBackdrop"></div>
+  <header class="nav-shell">
+    <nav class="navbar">
+      <a href="index.html" class="brand" aria-label="Trackra Home">
+        <span class="logo-coin">₦</span>
+        <span class="logo-text">Trackra</span>
+      </a>
+      <button class="hamburger" id="hamburgerBtn" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="desktop-nav">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#usdt">USDT</a>
+      </div>
+      <a href="tracker.html" class="btn btn-primary nav-cta">Open Tracker</a>
+    </nav>
+    <div class="mobile-menu" id="mobileMenu">
+      <a href="#features" class="mobile-link">Features</a>
+      <a href="#how-it-works" class="mobile-link">How it works</a>
+      <a href="#usdt" class="mobile-link">USDT Focus</a>
+      <a href="tracker.html" class="mobile-link">Open Tracker</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero reveal-group">
+      <p class="badge">Built for Nigerian crypto users and freelancers paid in USDT</p>
+      <h1>Track crypto in Naira. Instantly.</h1>
+      <p class="subheadline">Monitor wallet balances across Ethereum, BNB Chain, Polygon, and Solana with live USD to NGN conversion.</p>
+      <div class="hero-ctas">
+        <a href="tracker.html" class="btn btn-primary">Track Wallet</a>
+        <a href="#features" class="btn btn-secondary">Explore Features</a>
+      </div>
+      <div class="mobile-counter" id="heroCounter">$0 = ₦0</div>
+      <div class="hero-mockup" aria-hidden="true">
+        <div class="mock-card">
+          <h3>Portfolio Value</h3>
+          <p>$2,847.34</p>
+          <small>₦4,271,500</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <h2>Everything you need to track smartly</h2>
+      <div class="feature-grid">
+        <article class="feature-card fade-up">
+          <div class="feature-icon">₦</div>
+          <h3>Live Naira conversion</h3>
+          <p>See your wallet value in NGN instantly with real exchange rates.</p>
+        </article>
+        <article class="feature-card fade-up">
+          <div class="feature-icon">⛓</div>
+          <h3>Multi-chain support</h3>
+          <p>Track Ethereum, BNB Chain, Polygon, and Solana in one place.</p>
+        </article>
+        <article class="feature-card fade-up">
+          <div class="feature-icon">🧾</div>
+          <h3>Clear history</h3>
+          <p>View wallet inflows and outflows with easy copyable transaction hash.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="how-it-works">
+      <h2>How Trackra works</h2>
+      <div class="steps">
+        <article class="step-card">
+          <span class="step-num">1</span>
+          <h3>Enter wallet</h3>
+          <p>Paste any public address. No key, no signature, no login.</p>
+        </article>
+        <span class="step-arrow">↓</span>
+        <article class="step-card">
+          <span class="step-num">2</span>
+          <h3>Pick network</h3>
+          <p>Select Ethereum, BNB Chain, Polygon, or Solana.</p>
+        </article>
+        <span class="step-arrow">↓</span>
+        <article class="step-card">
+          <span class="step-num">3</span>
+          <h3>Get live results</h3>
+          <p>Balances, token holdings, and transactions update in seconds.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="usdt">
+      <article class="usdt-card">
+        <h2>USDT-first workflow for Nigerian earners</h2>
+        <p>Track stablecoin income from clients and instantly view its value in Naira.</p>
+        <a href="tracker.html" class="btn btn-primary">Track my USDT wallet</a>
+      </article>
+    </section>
+
+    <section class="section stats-row">
+      <article class="stat"><h3>4</h3><p>Supported chains</p></article>
+      <article class="stat"><h3>Live</h3><p>USD to NGN conversion</p></article>
+      <article class="stat"><h3>Read only</h3><p>No key storage ever</p></article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-col">
+      <a href="index.html" class="brand footer-brand">
+        <span class="logo-coin">₦</span>
+        <span class="logo-text">Trackra</span>
+      </a>
+      <p>Track crypto in Naira. Instantly.</p>
+    </div>
+    <div class="footer-col footer-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="tracker.html">Tracker</a>
+    </div>
+    <div class="footer-col signature">
+      <p>Built by Bamidele Matthew<br />Software Developer and Meta Ads Strategist<br />Lagos, Nigeria · <a href="https://github.com/bamson-dev" target="_blank" rel="noreferrer">github.com/bamson-dev</a></p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      if (location.protocol !== 'file:') return;
+      var el = document.getElementById('fileProtoBanner');
+      if (el) el.hidden = false;
+    })();
+  </script>
+  <script src="js/app.js?v=20260418e"></script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trackra Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+</head>
+<body>
+  <div id="fileProtoBanner" class="file-protocol-banner" hidden role="alert">
+    <strong>file://</strong> cannot load APIs reliably. Run a local server in this folder:
+    <code>python3 -m http.server 8080</code>
+    then open <code>http://localhost:8080/tracker.html</code>. IDE “preview” may log a frame warning for file URLs; use localhost instead.
+  </div>
+  <div class="pull-spinner" id="pullSpinner" aria-hidden="true"></div>
+  <header class="tracker-topbar">
+    <a href="index.html" class="brand" aria-label="Trackra Home">
+      <span class="logo-coin">₦</span>
+      <span class="logo-text">Trackra</span>
+    </a>
+    <a href="index.html" class="home-link">Home</a>
+  </header>
+
+  <main class="tracker-main">
+    <section class="search-card">
+      <h1>Wallet tracker</h1>
+      <p>Track any public wallet with live balances in USD and Naira.</p>
+      <form id="trackForm" novalidate>
+        <input id="walletInput" type="text" placeholder="Paste wallet address (0x... or Solana base58)" autocomplete="off" />
+        <div class="inline-error" id="inlineError" hidden>⚠ Enter a valid wallet address for the selected network.</div>
+        <select id="networkSelect" aria-label="Select network">
+          <option value="eth">Ethereum</option>
+          <option value="bsc">BNB Chain</option>
+          <option value="polygon">Polygon</option>
+          <option value="solana">Solana</option>
+        </select>
+        <button class="btn btn-primary" id="trackBtn" type="submit">Track Wallet</button>
+        <button class="btn btn-secondary demo-btn" id="demoBtn" type="button">Try Demo Wallet</button>
+      </form>
+      <div class="security-note">🔒 <span>Read only access only. We never ask for seed phrases or private keys.</span></div>
+      <p class="local-note">Trusted by Nigerian users tracking USDT payouts and Naira value in real time.</p>
+    </section>
+
+    <section class="empty-state" id="emptyState">
+      <div class="empty-coin">₦</div>
+      <h2>Track your wallet now</h2>
+      <p>Enter an address to view balances, token holdings, and latest transactions.</p>
+    </section>
+
+    <section class="skeleton-wrap" id="skeletonWrap" hidden>
+      <div class="skeleton-grid">
+        <div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div>
+      </div>
+      <div class="skeleton-lines"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="skeleton-lines"><span></span><span></span><span></span><span></span></div>
+    </section>
+
+    <section class="error-state" id="errorState" hidden>
+      <div class="error-icon">⚠</div>
+      <h3>Could not fetch wallet data</h3>
+      <p>Check the network and address format, then try again.</p>
+      <button class="btn btn-primary" id="retryBtn" type="button">Try Again</button>
+    </section>
+
+    <section class="results" id="results" hidden>
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <div class="currency-toggle" id="currencyToggle">
+        <button data-currency="usd" class="active" type="button">USD</button>
+        <button data-currency="ngn" type="button">NGN</button>
+        <button data-currency="both" type="button">Both</button>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h3>Token holdings</h3></div>
+        <div id="tokensContainer"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head tx-head">
+          <h3>Transaction history</h3>
+          <div class="tx-filters" id="txFilters">
+            <button data-filter="all" class="active" type="button">All</button>
+            <button data-filter="in" type="button">IN</button>
+            <button data-filter="out" type="button">OUT</button>
+          </div>
+        </div>
+        <div id="transactionsContainer"></div>
+      </section>
+
+      <p class="updated-time" id="updatedTime"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-col signature">
+      <p>Built by Bamidele Matthew<br />Software Developer and Meta Ads Strategist<br />Lagos, Nigeria · <a href="https://github.com/bamson-dev" target="_blank" rel="noreferrer">github.com/bamson-dev</a></p>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      if (location.protocol !== 'file:') return;
+      var el = document.getElementById('fileProtoBanner');
+      if (el) el.hidden = false;
+    })();
+  </script>
+  <script src="js/api.js?v=20260418e"></script>
+  <script src="js/ui.js?v=20260418e"></script>
+  <script src="js/app.js?v=20260418e"></script>
+</body>
+</html>
