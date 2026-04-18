@@ -223,26 +223,32 @@ async function fetchDexscreenerSolPrices(mints) {
   return byMint;
 }
 
+async function fetchJupiterV3MintPrices(mints) {
+  const byMint = {};
+  for (let i = 0; i < mints.length; i += 50) {
+    const chunk = mints.slice(i, i + 50);
+    const url = `https://api.jup.ag/price/v3?ids=${chunk.join(",")}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (!json || typeof json !== "object") continue;
+      Object.keys(json).forEach((mint) => {
+        const px = Number(json[mint]?.usdPrice || 0);
+        if (px > 0) byMint[mint] = px;
+      });
+    } catch {
+      /* next chunk */
+    }
+  }
+  return byMint;
+}
+
 async function fetchSolanaMintPrices(mints) {
   const uniqueMints = [...new Set((mints || []).filter(Boolean))];
   if (!uniqueMints.length) return {};
-  /* Do NOT encode the whole ids string — encoding commas breaks Jupiter (single malformed id → 404 / weird paths). Base58 mints are URL-safe. */
-  const jupUrl = `https://lite-api.jup.ag/price/v2?ids=${uniqueMints.join(",")}`;
-  const byMint = {};
-  try {
-    const res = await fetch(jupUrl);
-    if (res.ok) {
-      const json = await res.json();
-      const data = json?.data || {};
-      uniqueMints.forEach((mint) => {
-        const row = data?.[mint];
-        const p = Number(row?.price ?? row?.usdPrice ?? 0);
-        byMint[mint] = p;
-      });
-    }
-  } catch {
-    /* fall through to DexScreener */
-  }
+  /* lite-api.jup.ag/price/v2 returns 404 (route removed). Use api.jup.ag/price/v3 (verified 200 + CORS for github.io). */
+  const byMint = await fetchJupiterV3MintPrices(uniqueMints);
   const missing = uniqueMints.filter((m) => !Number(byMint[m] || 0));
   if (missing.length) {
     const dex = await fetchDexscreenerSolPrices(missing);
@@ -251,7 +257,7 @@ async function fetchSolanaMintPrices(mints) {
     });
   }
   // #region agent log
-  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-3',hypothesisId:'F3',location:'js/api.js:248',message:'solana mint prices merged',data:{requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
+  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-4',hypothesisId:'F4',location:'js/api.js:268',message:'solana mint prices merged',data:{requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
   return byMint;
 }
