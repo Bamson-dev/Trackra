@@ -119,6 +119,7 @@
       list.push({
         symbol: finalSymbol,
         name: cleanName,
+        mint,
         balance: amount,
         usdPrice,
         usdValue: amount * usdPrice,
@@ -319,6 +320,21 @@
             window.TrackraAPI.fetchSolanaSpotPrices()
           ]);
           tokens = normalizeSolTokens(solBal, solTokens, solPrices);
+          const unpricedMints = tokens
+            .filter((t) => Number(t.balance || 0) > 0 && Number(t.usdPrice || 0) <= 0 && t.mint)
+            .map((t) => t.mint);
+          if (unpricedMints.length && typeof window.TrackraAPI.fetchSolanaMintPrices === "function") {
+            const mintPrices = await window.TrackraAPI.fetchSolanaMintPrices(unpricedMints);
+            tokens = tokens.map((t) => {
+              const mintPrice = t.mint ? Number(mintPrices[t.mint] || 0) : 0;
+              if (mintPrice <= 0) return t;
+              return {
+                ...t,
+                usdPrice: mintPrice,
+                usdValue: Number(t.balance || 0) * mintPrice
+              };
+            });
+          }
           txs = normalizeSolTxs(solTxs, cleanAddress, Number(solPrices?.SOL || 0));
         } else {
           const [morTokens, morTxs, evmPrices] = await Promise.all([
@@ -334,7 +350,7 @@
 
         const totalUsd = tokens.reduce((a, t) => a + Number(t.usdValue || 0), 0);
         // #region agent log
-        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-3',hypothesisId:'N4',location:'js/app.js:326',message:'token valuation snapshot',data:{network:resolvedNetwork,tokenCount:tokens.length,pricedTokenCount:tokens.filter((t)=>Number(t.usdPrice||0)>0).length,nonZeroBalanceCount:tokens.filter((t)=>Number(t.balance||0)>0).length,sampleSymbols:tokens.slice(0,5).map((t)=>String(t.symbol||'')),totalUsd:Number(totalUsd||0)},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix',hypothesisId:'F1',location:'js/app.js:326',message:'token valuation snapshot',data:{network:resolvedNetwork,tokenCount:tokens.length,pricedTokenCount:tokens.filter((t)=>Number(t.usdPrice||0)>0).length,nonZeroBalanceCount:tokens.filter((t)=>Number(t.balance||0)>0).length,sampleSymbols:tokens.slice(0,5).map((t)=>String(t.symbol||'')),totalUsd:Number(totalUsd||0)},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         const usdtUsd = tokens
           .filter((token) => String(token.symbol || "").toUpperCase() === "USDT")
