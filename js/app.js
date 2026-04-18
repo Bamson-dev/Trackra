@@ -1,5 +1,6 @@
 (() => {
-  const isLanding = window.location.pathname.endsWith("index.html") || window.location.pathname === "/" || window.location.pathname.endsWith("Trackra/");
+  /* Pathname checks break on GitHub Pages (e.g. /repo vs /repo/). Use the tracker form as source of truth. */
+  const isLanding = !document.getElementById("trackForm");
   const SOLANA_MINT_MAP = {
     So11111111111111111111111111111111111111112: { symbol: "SOL", name: "Solana" },
     Es9vMFrzaCERmJfrF4H2M9w7f1JxuxMxDPZWS9Vyhi3F: { symbol: "USDT", name: "Tether USD" },
@@ -164,6 +165,7 @@
     const inlineError = document.getElementById("inlineError");
     const demoBtn = document.getElementById("demoBtn");
     const retryBtn = document.getElementById("retryBtn");
+    if (!walletInput || !networkSelect) return;
     const errorTitle = document.querySelector("#errorState h3");
     const errorBody = document.querySelector("#errorState p");
 
@@ -177,7 +179,7 @@
     let lastRequest = null;
 
     networkSelect.addEventListener("change", () => {
-      inlineError.hidden = true;
+      if (inlineError) inlineError.hidden = true;
     });
     let latestPayload = null;
 
@@ -254,26 +256,40 @@
     }
 
     function setState(mode) {
-      emptyState.hidden = mode !== "empty";
-      skeletonWrap.hidden = mode !== "loading";
-      errorState.hidden = mode !== "error";
-      results.hidden = mode !== "results";
+      if (emptyState) emptyState.hidden = mode !== "empty";
+      if (skeletonWrap) skeletonWrap.hidden = mode !== "loading";
+      if (errorState) errorState.hidden = mode !== "error";
+      if (results) results.hidden = mode !== "results";
     }
 
     async function runTrack(address, network) {
-      inlineError.hidden = true;
+      if (inlineError) inlineError.hidden = true;
       syncNetworkWithAddress(address);
       const cleanAddress = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!cleanAddress) {
-        inlineError.hidden = true;
-        inlineError.textContent = "";
+        if (inlineError) {
+          inlineError.hidden = true;
+          inlineError.textContent = "";
+        }
         return;
       }
       const resolvedNetwork = resolveNetwork(cleanAddress, network);
       lastRequest = { address: cleanAddress, network: resolvedNetwork };
       if (!validateWallet(cleanAddress, resolvedNetwork)) {
-        inlineError.textContent = `⚠ ${getAddressHint(resolvedNetwork, cleanAddress)}`;
-        inlineError.hidden = false;
+        if (inlineError) {
+          inlineError.textContent = `⚠ ${getAddressHint(resolvedNetwork, cleanAddress)}`;
+          inlineError.hidden = false;
+        }
+        return;
+      }
+
+      if (typeof window.TrackraAPI === "undefined" || typeof window.TrackraUI === "undefined") {
+        if (errorTitle && errorBody) {
+          errorTitle.textContent = "Scripts did not load";
+          errorBody.textContent =
+            "js/api.js or js/ui.js failed to load (404 or blocked). Hard-refresh (Ctrl+Shift+R). On GitHub Pages, open the site from the repo root so /js/ paths resolve.";
+        }
+        setState("error");
         return;
       }
 
@@ -319,7 +335,7 @@
         window.TrackraUI.renderSummary(summary, ngnRate);
         window.TrackraUI.renderTokens(tokens, ngnRate);
         window.TrackraUI.renderTransactions(txs, cleanAddress, ngnRate);
-        updatedTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        if (updatedTime) updatedTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         setState("results");
       } catch (err) {
         if (errorTitle && errorBody) {
@@ -338,8 +354,10 @@
       e.preventDefault();
       const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!address) {
-        inlineError.hidden = true;
-        inlineError.textContent = "";
+        if (inlineError) {
+          inlineError.hidden = true;
+          inlineError.textContent = "";
+        }
         return;
       }
       syncNetworkWithAddress(address);
@@ -347,7 +365,7 @@
     });
 
     walletInput.addEventListener("input", (e) => {
-      inlineError.hidden = true;
+      if (inlineError) inlineError.hidden = true;
       syncNetworkWithAddress(e.target.value);
     });
 
@@ -359,38 +377,50 @@
       requestAnimationFrame(() => syncNetworkWithAddress(walletInput.value));
     });
 
-    inlineError.hidden = true;
-    inlineError.textContent = "";
+    if (inlineError) {
+      inlineError.hidden = true;
+      inlineError.textContent = "";
+    }
 
-    demoBtn.addEventListener("click", () => {
-      walletInput.value = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
-      networkSelect.value = "eth";
-      runTrack(walletInput.value, "eth");
-    });
+    if (demoBtn) {
+      demoBtn.addEventListener("click", () => {
+        walletInput.value = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+        networkSelect.value = "eth";
+        runTrack(walletInput.value, "eth");
+      });
+    }
 
-    retryBtn.addEventListener("click", () => {
-      if (!lastRequest) return;
-      runTrack(lastRequest.address, lastRequest.network);
-    });
+    if (retryBtn) {
+      retryBtn.addEventListener("click", () => {
+        if (!lastRequest) return;
+        runTrack(lastRequest.address, lastRequest.network);
+      });
+    }
 
-    document.getElementById("currencyToggle").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-currency]");
-      if (!btn || !latestPayload) return;
-      document.querySelectorAll("#currencyToggle button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      window.TrackraUI.setCurrencyMode(btn.dataset.currency);
-      window.TrackraUI.renderTokens(latestPayload.tokens, latestPayload.ngnRate);
-      window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
-    });
+    const currencyToggle = document.getElementById("currencyToggle");
+    if (currencyToggle) {
+      currencyToggle.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-currency]");
+        if (!btn || !latestPayload) return;
+        currencyToggle.querySelectorAll("button[data-currency]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        window.TrackraUI.setCurrencyMode(btn.dataset.currency);
+        window.TrackraUI.renderTokens(latestPayload.tokens, latestPayload.ngnRate);
+        window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
+      });
+    }
 
-    document.getElementById("txFilters").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-filter]");
-      if (!btn || !latestPayload) return;
-      document.querySelectorAll("#txFilters button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      window.TrackraUI.setTxFilter(btn.dataset.filter);
-      window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
-    });
+    const txFilters = document.getElementById("txFilters");
+    if (txFilters) {
+      txFilters.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-filter]");
+        if (!btn || !latestPayload) return;
+        txFilters.querySelectorAll("button[data-filter]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        window.TrackraUI.setTxFilter(btn.dataset.filter);
+        window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
+      });
+    }
 
     let startY = 0;
     let pulling = false;
@@ -402,7 +432,7 @@
     }, { passive: true });
 
     window.addEventListener("touchmove", (e) => {
-      if (!pulling) return;
+      if (!pulling || !pullSpinner) return;
       const delta = e.touches[0].clientY - startY;
       if (delta > 12) pullSpinner.classList.add("show");
     }, { passive: true });
@@ -415,7 +445,7 @@
       if (delta >= 80 && lastRequest) {
         await runTrack(lastRequest.address, lastRequest.network);
       }
-      pullSpinner.classList.remove("show");
+      if (pullSpinner) pullSpinner.classList.remove("show");
     });
   }
 
