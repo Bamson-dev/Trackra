@@ -188,6 +188,13 @@
     const SOLANA_FALLBACK_RE = /^(?!0x)[A-Za-z0-9]{32,44}$/;
     const EVM_RE = /^0x[0-9a-fA-F]{40}$/;
 
+    /** Must match validateWallet(solana): strict OR fallback, and never treat 0x as Solana. */
+    function looksLikeSolanaAddress(raw) {
+      const a = String(raw || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
+      if (!a || EVM_RE.test(a)) return false;
+      return SOLANA_RE.test(a) || SOLANA_FALLBACK_RE.test(a);
+    }
+
     function normalizeNetworkKey(raw) {
       const n = String(raw || "").trim().toLowerCase();
       if (n === "solana" || n === "eth" || n === "bsc" || n === "polygon") return n;
@@ -202,7 +209,7 @@
       const fromSelect = normalizeNetworkKey(networkSelect?.value);
       const fromArg = normalizeNetworkKey(passedNetwork);
       const a = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      const looksSol = a.length > 0 && SOLANA_RE.test(a);
+      const looksSol = looksLikeSolanaAddress(a);
       const looksEvm = a.length > 0 && EVM_RE.test(a);
 
       if (looksSol && !looksEvm) return "solana";
@@ -215,7 +222,7 @@
       let net = fromSelect || fromArg;
       if (!net && a) {
         if (a.startsWith("0x")) net = "eth";
-        else if (SOLANA_RE.test(a)) net = "solana";
+        else if (looksLikeSolanaAddress(a)) net = "solana";
       }
       return net || "eth";
     }
@@ -247,11 +254,11 @@
     function syncNetworkWithAddress(rawAddress) {
       const a = String(rawAddress || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!a) return;
-      if (SOLANA_RE.test(a) && !EVM_RE.test(a)) {
+      if (looksLikeSolanaAddress(a)) {
         networkSelect.value = "solana";
         return;
       }
-      if (EVM_RE.test(a) && !SOLANA_RE.test(a) && networkSelect.value === "solana") {
+      if (EVM_RE.test(a) && networkSelect.value === "solana") {
         networkSelect.value = "eth";
       }
     }
@@ -395,8 +402,8 @@
       const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!address) {
         if (inlineError) {
-          inlineError.hidden = true;
-          inlineError.textContent = "";
+          inlineError.textContent = "⚠ Enter a wallet address.";
+          inlineError.hidden = false;
         }
         return;
       }
