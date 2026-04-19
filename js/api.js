@@ -1,530 +1,262 @@
-(() => {
-  /* Pathname checks break on GitHub Pages (e.g. /repo vs /repo/). Use the tracker form as source of truth. */
-  const isLanding = !document.getElementById("trackForm");
-  const SOLANA_MINT_MAP = {
-    So11111111111111111111111111111111111111112: { symbol: "SOL", name: "Solana" },
-    Es9vMFrzaCERmJfrF4H2M9w7f1JxuxMxDPZWS9Vyhi3F: { symbol: "USDT", name: "Tether USD" },
-    EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { symbol: "USDC", name: "USD Coin" },
-    mSoLzYCxHdYgdzU2G8QxM3pJ6kWk3FQf5w6dkprdFMN: { symbol: "MSOL", name: "Marinade Staked SOL" },
-    JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN: { symbol: "JUP", name: "Jupiter" },
-    bonkKp6f8o9D8qH4yLhM1wsm6qf6UvXzjS5yQ7fXh3N: { symbol: "BONK", name: "Bonk" }
-  };
+const MORALIS_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjhiNTgyMzM5LTJhYjYtNGIwNC05ZmI1LWIzNmRiZDUwYTE4MSIsIm9yZ0lkIjoiNTEwMzUyIiwidXNlcklkIjoiNTI1MDk0IiwidHlwZUlkIjoiNzdkZDFlNGItNjVhZS00ZDQ3LTg4NGYtODY0MmY4MmYyZTM3IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NzY1MjMwNzksImV4cCI6NDkzMjI4MzA3OX0.gLpia3GQ4R4aXHuwb5iKV-ltKO5TjNeJfvqHu71G_ow";
+const HELIUS_KEY = "742e7e92-be3e-46bf-9d75-b6f2ef81d5af";
+const FX_KEY = "f3cbe6e069015f2225c4dcc0";
 
-  function setupLanding() {
-    const hamburgerBtn = document.getElementById("hamburgerBtn");
-    const mobileMenu = document.getElementById("mobileMenu");
-    const menuBackdrop = document.getElementById("menuBackdrop");
-    if (!hamburgerBtn || !mobileMenu) return;
+const CHAIN_MAP = {
+  eth: "eth",
+  bsc: "bsc",
+  polygon: "polygon"
+};
 
-    const closeMenu = () => {
-      mobileMenu.classList.remove("open");
-      menuBackdrop.classList.remove("show");
-      hamburgerBtn.setAttribute("aria-expanded", "false");
+/** Public RPC — used when Helius rejects the browser origin (common on GitHub Pages until the key’s domain allowlist includes your site). */
+const PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
+
+let ngnRateCache = null;
+let solPriceCache = null;
+let evmNativePriceCache = null;
+
+/**
+ * POST JSON-RPC to Helius first, then fall back to Solana public RPC (same request body).
+ */
+async function postSolanaRpc(method, params) {
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: "trackra",
+    method,
+    params
+  });
+  const endpoints = [
+    `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(HELIUS_KEY)}`,
+    PUBLIC_SOLANA_RPC
+  ];
+  let lastErr = null;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        lastErr = new Error(`Solana RPC HTTP ${res.status}`);
+        continue;
+      }
+      if (json?.error) {
+        lastErr = new Error(json.error.message || "Solana RPC error");
+        continue;
+      }
+      return json;
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr || new Error("Solana RPC unavailable");
+}
+
+async function getNgnRate() {
+  if (ngnRateCache) return ngnRateCache;
+  try {
+    const res = await fetch(`https://v6.exchangerate-api.com/v6/${FX_KEY}/latest/USD`);
+    if (!res.ok) throw new Error("FX fetch failed");
+    const json = await res.json();
+    ngnRateCache = json?.conversion_rates?.NGN || 0;
+  } catch {
+    ngnRateCache = 0;
+  }
+  return ngnRateCache;
+}
+
+async function fetchMoralisTokens(address, network) {
+  const chain = CHAIN_MAP[network];
+  const url = new URL(`https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens`);
+  url.searchParams.set("chain", chain);
+  const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
+  if (!res.ok) {
+    const originHint =
+      res.status === 401 || res.status === 403
+        ? " In Moralis, open this API key → allowed URLs → add your live site (e.g. https://yourname.github.io)."
+        : "";
+    throw new Error(`Token fetch failed (${res.status}).${originHint}`);
+  }
+  const json = await res.json();
+  /* Moralis returns { result: [...] } — not a bare array */
+  if (Array.isArray(json)) return json;
+  return json?.result || [];
+}
+
+async function fetchMoralisTransactions(address, network) {
+  const chain = CHAIN_MAP[network];
+  const url = new URL(`https://deep-index.moralis.io/api/v2.2/${address}`);
+  url.searchParams.set("chain", chain);
+  url.searchParams.set("limit", "20");
+  const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
+  if (!res.ok) {
+    const originHint =
+      res.status === 401 || res.status === 403
+        ? " In Moralis, allow your GitHub Pages URL for this API key."
+        : "";
+    throw new Error(`Transaction fetch failed (${res.status}).${originHint}`);
+  }
+  const json = await res.json();
+  return json?.result || [];
+}
+
+async function fetchSolanaBalance(address) {
+  const json = await postSolanaRpc("getBalance", [address]);
+  return (json?.result?.value || 0) / 1e9;
+}
+
+async function fetchSolanaTokens(address) {
+  const json = await postSolanaRpc("getTokenAccountsByOwner", [
+    address,
+    { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
+    { encoding: "jsonParsed" }
+  ]);
+  return json?.result?.value || [];
+}
+
+async function fetchSolanaTransactions(address) {
+  const url = new URL(`https://api.helius.xyz/v0/addresses/${address}/transactions`);
+  url.searchParams.set("api-key", HELIUS_KEY);
+  url.searchParams.set("limit", "20");
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const hint =
+        res.status === 401 || res.status === 403
+          ? ` (${res.status}: add your GitHub Pages URL to the Helius API key allowed domains, or txs stay empty.)`
+          : ` (HTTP ${res.status})`;
+      throw new Error(`Sol tx fetch failed${hint}`);
+    }
+    return res.json();
+  } catch (e) {
+    /* Do not fail the whole tracker — balances/tokens still work via RPC fallback */
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[Trackra] Transaction history unavailable:", e);
+    }
+    return [];
+  }
+}
+
+async function fetchEvmNativeSpotPrices() {
+  if (evmNativePriceCache) return evmNativePriceCache;
+  try {
+    const url = new URL("https://api.coingecko.com/api/v3/simple/price");
+    url.searchParams.set("ids", "ethereum,binancecoin,matic-network");
+    url.searchParams.set("vs_currencies", "usd");
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("EVM native price fetch failed");
+    const json = await res.json();
+    evmNativePriceCache = {
+      eth: Number(json?.ethereum?.usd || 0),
+      bsc: Number(json?.binancecoin?.usd || 0),
+      polygon: Number(json?.["matic-network"]?.usd || 0)
     };
-
-    hamburgerBtn.addEventListener("click", () => {
-      const open = mobileMenu.classList.toggle("open");
-      menuBackdrop.classList.toggle("show", open);
-      hamburgerBtn.setAttribute("aria-expanded", String(open));
-    });
-
-    menuBackdrop.addEventListener("click", closeMenu);
-    document.querySelectorAll(".mobile-link").forEach((link) => link.addEventListener("click", closeMenu));
-
-    const counter = document.getElementById("heroCounter");
-    if (counter) {
-      const start = performance.now();
-      const usdTarget = 2847;
-      const ngnTarget = 4271500;
-      function tick(now) {
-        const p = Math.min((now - start) / 1200, 1);
-        const usd = (usdTarget * p).toLocaleString(undefined, { maximumFractionDigits: 0 });
-        const ngn = (ngnTarget * p).toLocaleString(undefined, { maximumFractionDigits: 0 });
-        counter.textContent = `$${usd} = ₦${ngn}`;
-        if (p < 1) requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach((entry) => entry.isIntersecting && entry.target.classList.add("visible")),
-      { threshold: 0.2 }
-    );
-    document.querySelectorAll(".fade-up").forEach((el) => observer.observe(el));
+  } catch {
+    evmNativePriceCache = { eth: 0, bsc: 0, polygon: 0 };
   }
+  return evmNativePriceCache;
+}
 
-  function normalizeEvmTokens(rawTokens) {
-    return (rawTokens || []).map((t) => {
-      const decimals = Number(t.decimals || 18);
-      const rawBal = Number(t.balance || 0);
-      const balance = rawBal / 10 ** decimals;
-      const usdValue = Number(t.usd_value || balance * Number(t.usd_price || 0));
-      return {
-        symbol: t.symbol,
-        name: t.name,
-        balance,
-        usdPrice: Number(t.usd_price || 0),
-        usdValue,
-        change24h: (Math.random() * 14) - 7
-      };
-    }).filter((t) => t.balance > 0);
+async function fetchSolanaSpotPrices() {
+  if (solPriceCache) return solPriceCache;
+  try {
+    const url = new URL("https://api.coingecko.com/api/v3/simple/price");
+    url.searchParams.set("ids", "solana,marinade-staked-sol,jupiter-exchange-solana,bonk");
+    url.searchParams.set("vs_currencies", "usd");
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Sol price fetch failed");
+    const json = await res.json();
+    solPriceCache = {
+      SOL: Number(json?.solana?.usd || 0),
+      USDT: 1,
+      USDC: 1,
+      MSOL: Number(json?.["marinade-staked-sol"]?.usd || 0),
+      JUP: Number(json?.["jupiter-exchange-solana"]?.usd || 0),
+      BONK: Number(json?.bonk?.usd || 0)
+    };
+  } catch {
+    solPriceCache = { SOL: 0, USDT: 1, USDC: 1, MSOL: 0, JUP: 0, BONK: 0 };
   }
+  return solPriceCache;
+}
 
-  function normalizeEvmTxs(rawTxs, wallet, nativePriceUsd = 0, nativeSymbol = "ETH") {
-    return (rawTxs || []).map((tx) => {
-      const valueWei = Number(tx.value || 0);
-      const valueEth = valueWei / 1e18;
-      const hasNative = valueWei > 0;
-      const type = String(tx.to_address || "").toLowerCase() === wallet.toLowerCase() ? "in" : "out";
-      const price = Number(nativePriceUsd || 0);
-      const valueEstimated = hasNative && price > 0;
-      const valueUnavailable = !hasNative || price <= 0;
-      const usdValue = valueEstimated ? valueEth * price : 0;
-      return {
-        hash: tx.hash,
-        date: tx.block_timestamp,
-        type,
-        symbol: nativeSymbol,
-        amount: valueEth,
-        usdValue,
-        valueUnavailable,
-        valueEstimated
-      };
-    });
-  }
-
-  function normalizeSolTokens(solBalance, tokenAccounts, priceMap = {}) {
-    const solPrice = Number(priceMap.SOL || 0);
-    const list = [{
-      symbol: "SOL",
-      name: "Solana",
-      balance: solBalance,
-      usdPrice: solPrice,
-      usdValue: solBalance * solPrice,
-      change24h: (Math.random() * 14) - 7
-    }];
-    (tokenAccounts || []).forEach((acc) => {
-      const info = acc?.account?.data?.parsed?.info;
-      const amountInfo = info?.tokenAmount;
-      const amount = Number(amountInfo?.uiAmount || 0);
-      if (!amount) return;
-      const mint = info?.mint || "TOKEN";
-      const mintMeta = SOLANA_MINT_MAP[mint];
-      const fallbackSymbol = mint.slice(0, 4).toUpperCase();
-      const cleanSymbol = (amountInfo?.symbol || fallbackSymbol).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8) || fallbackSymbol;
-      const cleanName = amountInfo?.name || mintMeta?.name || `Token ${mint.slice(0, 4)}`;
-      if (mintMeta?.symbol === "SOL") return;
-      const finalSymbol = mintMeta?.symbol || cleanSymbol;
-      const usdPrice = Number(priceMap[finalSymbol] || 0);
-      list.push({
-        symbol: finalSymbol,
-        name: cleanName,
-        mint,
-        balance: amount,
-        usdPrice,
-        usdValue: amount * usdPrice,
-        change24h: (Math.random() * 14) - 7
+/**
+ * DexScreener allows comma-separated mints (up to ~30 per request). CORS-friendly for public pages.
+ */
+async function fetchDexscreenerSolPrices(mints) {
+  const byMint = {};
+  for (let i = 0; i < mints.length; i += 30) {
+    const chunk = mints.slice(i, i + 30);
+    const url = `https://api.dexscreener.com/latest/dex/tokens/${chunk.join(",")}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      const pairs = json?.pairs || [];
+      pairs.forEach((p) => {
+        const addr = p.baseToken?.address;
+        if (!addr) return;
+        const px = Number(p.priceUsd || 0);
+        if (px <= 0) return;
+        if (!byMint[addr] || px > byMint[addr]) byMint[addr] = px;
       });
-    });
-    return list;
+    } catch {
+      /* next chunk */
+    }
   }
+  return byMint;
+}
 
-  function normalizeSolTxs(rawTxs, wallet, solPriceUsd = 0) {
-    return (rawTxs || []).map((tx) => {
-      const timestamp = (tx.timestamp || Math.floor(Date.now() / 1000)) * 1000;
-      const nativeTransfers = tx.nativeTransfers || [];
-      const transfer = nativeTransfers[0];
-      const rawLamports = transfer ? Number(transfer.amount || 0) : 0;
-      const hasNative = rawLamports > 0;
-      const amount = hasNative ? rawLamports / 1e9 : 0;
-      const type = hasNative
-        ? (String(transfer.toUserAccount || "").toLowerCase() === wallet.toLowerCase() ? "in" : "out")
-        : "out";
-      const price = Number(solPriceUsd || 0);
-      const valueEstimated = hasNative && price > 0;
-      const valueUnavailable = !hasNative || price <= 0;
-      const usdValue = valueEstimated ? amount * price : 0;
-      return {
-        hash: tx.signature,
-        date: new Date(timestamp).toISOString(),
-        type,
-        symbol: "SOL",
-        amount,
-        usdValue,
-        valueUnavailable,
-        valueEstimated
-      };
-    });
+async function fetchJupiterV3MintPrices(mints) {
+  const byMint = {};
+  for (let i = 0; i < mints.length; i += 50) {
+    const chunk = mints.slice(i, i + 50);
+    const url = `https://api.jup.ag/price/v3?ids=${chunk.join(",")}`;
+    try {
+      let res = await fetch(url);
+      if (res.status === 429) res = await fetch(url);
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (!json || typeof json !== "object") continue;
+      Object.keys(json).forEach((mint) => {
+        const px = Number(json[mint]?.usdPrice || 0);
+        if (px > 0) byMint[mint] = px;
+      });
+    } catch {
+      /* next chunk */
+    }
   }
+  return byMint;
+}
 
-  async function setupTracker() {
-    const form = document.getElementById("trackForm");
-    if (!form) return;
+async function fetchSolanaMintPrices(mints) {
+  const uniqueMints = [...new Set((mints || []).filter(Boolean))];
+  if (!uniqueMints.length) return {};
+  /* Run Jupiter v3 and DexScreener in parallel — either can fail (429, rate limits); merge best price per mint. */
+  const [jup, dex] = await Promise.all([
+    fetchJupiterV3MintPrices(uniqueMints),
+    fetchDexscreenerSolPrices(uniqueMints)
+  ]);
+  const byMint = {};
+  uniqueMints.forEach((m) => {
+    const a = Number(jup[m] || 0);
+    const b = Number(dex[m] || 0);
+    const best = Math.max(a, b);
+    if (best > 0) byMint[m] = best;
+  });
+  return byMint;
+}
 
-    const walletInput = document.getElementById("walletInput");
-    const networkSelect = document.getElementById("networkSelect");
-    const inlineError = document.getElementById("inlineError");
-    const demoBtn = document.getElementById("demoBtn");
-    const retryBtn = document.getElementById("retryBtn");
-    if (!walletInput || !networkSelect) return;
-    const errorTitle = document.querySelector("#errorState h3");
-    const errorBody = document.querySelector("#errorState p");
-
-    const emptyState = document.getElementById("emptyState");
-    const skeletonWrap = document.getElementById("skeletonWrap");
-    const errorState = document.getElementById("errorState");
-    const results = document.getElementById("results");
-    const pullSpinner = document.getElementById("pullSpinner");
-    const updatedTime = document.getElementById("updatedTime");
-
-    let lastRequest = null;
-
-    networkSelect.addEventListener("change", () => {
-      if (inlineError) inlineError.hidden = true;
-    });
-    let latestPayload = null;
-
-    const SOLANA_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-    const SOLANA_FALLBACK_RE = /^(?!0x)[A-Za-z0-9]{32,44}$/;
-    const EVM_RE = /^0x[0-9a-fA-F]{40}$/;
-
-    /** Must match validateWallet(solana): strict OR fallback, and never treat 0x as Solana. */
-    function looksLikeSolanaAddress(raw) {
-      const a = String(raw || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!a || EVM_RE.test(a)) return false;
-      return SOLANA_RE.test(a) || SOLANA_FALLBACK_RE.test(a);
-    }
-
-    function normalizeNetworkKey(raw) {
-      const n = String(raw || "").trim().toLowerCase();
-      if (n === "solana" || n === "eth" || n === "bsc" || n === "polygon") return n;
-      return "";
-    }
-
-    /**
-     * Resolve chain for API + validation. Address shape wins over a buggy <select> (iOS/WebKit often
-     * leaves value as the first option "eth" while the picker UI shows "Solana").
-     */
-    function resolveNetwork(address, passedNetwork) {
-      const fromSelect = normalizeNetworkKey(networkSelect?.value);
-      const fromArg = normalizeNetworkKey(passedNetwork);
-      const a = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      const looksSol = looksLikeSolanaAddress(a);
-      const looksEvm = a.length > 0 && EVM_RE.test(a);
-
-      if (looksSol && !looksEvm) return "solana";
-
-      if (looksEvm && !looksSol) {
-        if (fromSelect && ["eth", "bsc", "polygon"].includes(fromSelect)) return fromSelect;
-        return "eth";
-      }
-
-      let net = fromSelect || fromArg;
-      if (!net && a) {
-        if (a.startsWith("0x")) net = "eth";
-        else if (looksLikeSolanaAddress(a)) net = "solana";
-      }
-      return net || "eth";
-    }
-
-    function validateWallet(address, network) {
-      const a = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (network === "solana") {
-        /* Be permissive to avoid blocking real Solana addresses due clipboard/font ambiguities. */
-        return SOLANA_RE.test(a) || SOLANA_FALLBACK_RE.test(a);
-      }
-      if (network === "eth" || network === "bsc" || network === "polygon") return EVM_RE.test(a);
-      return false;
-    }
-
-    function getAddressHint(network, address) {
-      const a = String(address || "").trim();
-      if (network === "solana") {
-        if (EVM_RE.test(a)) {
-          return "This is an EVM (0x) address. Switch the network to Ethereum, BNB Chain, or Polygon.";
-        }
-        return "Use a Solana address (base58, 32-44 characters).";
-      }
-      if (SOLANA_RE.test(a) && !EVM_RE.test(a)) {
-        return "This looks like a Solana address. Switch the network to Solana, or use a 0x address for EVM.";
-      }
-      return "Use an EVM address starting with 0x and 42 total characters.";
-    }
-
-    function syncNetworkWithAddress(rawAddress) {
-      const a = String(rawAddress || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!a) return;
-      if (looksLikeSolanaAddress(a)) {
-        networkSelect.value = "solana";
-        return;
-      }
-      if (EVM_RE.test(a) && networkSelect.value === "solana") {
-        networkSelect.value = "eth";
-      }
-    }
-
-    function setState(mode) {
-      if (emptyState) emptyState.hidden = mode !== "empty";
-      if (skeletonWrap) skeletonWrap.hidden = mode !== "loading";
-      if (errorState) errorState.hidden = mode !== "error";
-      if (results) results.hidden = mode !== "results";
-    }
-
-    async function runTrack(address, network) {
-      if (inlineError) inlineError.hidden = true;
-      syncNetworkWithAddress(address);
-      const cleanAddress = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!cleanAddress) {
-        if (inlineError) {
-          inlineError.hidden = true;
-          inlineError.textContent = "";
-        }
-        return;
-      }
-      const resolvedNetwork = resolveNetwork(cleanAddress, network);
-      lastRequest = { address: cleanAddress, network: resolvedNetwork };
-      if (!validateWallet(cleanAddress, resolvedNetwork)) {
-        if (inlineError) {
-          inlineError.textContent = `⚠ ${getAddressHint(resolvedNetwork, cleanAddress)}`;
-          inlineError.hidden = false;
-        }
-        return;
-      }
-
-      if (typeof window.TrackraAPI === "undefined" || typeof window.TrackraUI === "undefined") {
-        if (errorTitle && errorBody) {
-          errorTitle.textContent = "Scripts did not load";
-          errorBody.textContent =
-            "js/api.js or js/ui.js failed to load (404 or blocked). Hard-refresh (Ctrl+Shift+R). On GitHub Pages, open the site from the repo root so /js/ paths resolve.";
-        }
-        setState("error");
-        return;
-      }
-
-      setState("loading");
-      try {
-        const ngnRate = await window.TrackraAPI.getNgnRate();
-        let tokens = [];
-        let txs = [];
-
-        if (resolvedNetwork === "solana") {
-          const [solBal, solTokens, solTxs, solPrices] = await Promise.all([
-            window.TrackraAPI.fetchSolanaBalance(cleanAddress),
-            window.TrackraAPI.fetchSolanaTokens(cleanAddress),
-            window.TrackraAPI.fetchSolanaTransactions(cleanAddress),
-            window.TrackraAPI.fetchSolanaSpotPrices()
-          ]);
-          tokens = normalizeSolTokens(solBal, solTokens, solPrices);
-          const WSOL = "So11111111111111111111111111111111111111112";
-          const mintsNeedingPrice = [];
-          if (
-            tokens[0] &&
-            tokens[0].symbol === "SOL" &&
-            Number(tokens[0].balance || 0) > 0 &&
-            Number(tokens[0].usdPrice || 0) <= 0
-          ) {
-            mintsNeedingPrice.push(WSOL);
-          }
-          tokens.forEach((t) => {
-            if (t.mint && Number(t.balance || 0) > 0 && Number(t.usdPrice || 0) <= 0) {
-              mintsNeedingPrice.push(t.mint);
-            }
-          });
-          const uniqueMintsToPrice = [...new Set(mintsNeedingPrice)];
-          if (uniqueMintsToPrice.length && typeof window.TrackraAPI.fetchSolanaMintPrices === "function") {
-            const mintPrices = await window.TrackraAPI.fetchSolanaMintPrices(uniqueMintsToPrice);
-            if (tokens[0]?.symbol === "SOL") {
-              const sp = Number(mintPrices[WSOL] || 0);
-              if (sp > 0) {
-                tokens[0] = {
-                  ...tokens[0],
-                  usdPrice: sp,
-                  usdValue: Number(tokens[0].balance || 0) * sp
-                };
-              }
-            }
-            tokens = tokens.map((t) => {
-              if (!t.mint) return t;
-              const mintPrice = Number(mintPrices[t.mint] || 0);
-              if (mintPrice <= 0) return t;
-              return {
-                ...t,
-                usdPrice: mintPrice,
-                usdValue: Number(t.balance || 0) * mintPrice
-              };
-            });
-          }
-          txs = normalizeSolTxs(solTxs, cleanAddress, Number(solPrices?.SOL || 0));
-        } else {
-          const [morTokens, morTxs, evmPrices] = await Promise.all([
-            window.TrackraAPI.fetchMoralisTokens(cleanAddress, resolvedNetwork),
-            window.TrackraAPI.fetchMoralisTransactions(cleanAddress, resolvedNetwork),
-            window.TrackraAPI.fetchEvmNativeSpotPrices()
-          ]);
-          const nativeUsd = Number(evmPrices?.[resolvedNetwork] || 0);
-          const nativeSymbol = resolvedNetwork === "bsc" ? "BNB" : resolvedNetwork === "polygon" ? "MATIC" : "ETH";
-          tokens = normalizeEvmTokens(morTokens);
-          txs = normalizeEvmTxs(morTxs, cleanAddress, nativeUsd, nativeSymbol);
-        }
-
-        const totalUsd = tokens.reduce((a, t) => a + Number(t.usdValue || 0), 0);
-        const usdtUsd = tokens
-          .filter((token) => String(token.symbol || "").toUpperCase() === "USDT")
-          .reduce((sum, token) => sum + Number(token.usdValue || 0), 0);
-        const summary = {
-          totalUsd,
-          usdtUsd,
-          tokenCount: tokens.length,
-          txCount: txs.length
-        };
-
-        latestPayload = { tokens, txs, summary, ngnRate, address: cleanAddress, network: resolvedNetwork };
-        window.TrackraUI.renderSummary(summary, ngnRate);
-        window.TrackraUI.renderTokens(tokens, ngnRate);
-        window.TrackraUI.renderTransactions(txs, cleanAddress, ngnRate);
-        if (updatedTime) updatedTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
-        setState("results");
-      } catch (err) {
-        if (errorTitle && errorBody) {
-          errorTitle.textContent = "Unable to load this wallet right now";
-          const fileProto = window.location.protocol === "file:";
-          const detail = err && err.message ? String(err.message) : "";
-          errorBody.textContent = fileProto
-            ? "Browsers block live API calls from file:// pages. Run a local server (e.g. in this folder: python3 -m http.server 8080) and open http://localhost:8080/tracker.html"
-            : (detail ? `${detail} If this persists, try again in a minute.` : "Network may be busy. Confirm the address and try again in a few seconds.");
-        }
-        setState("error");
-      }
-    }
-
-    /**
-     * Reads wallet + network from the form, validates, shows loading via runTrack,
-     * then fetches (Moralis/EVM via TrackraAPI, Solana via RPC + Helius txs) and renders.
-     * @returns {void}
-     */
-    function trackWallet() {
-      const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!address) {
-        if (inlineError) {
-          inlineError.textContent = "⚠ Enter a wallet address.";
-          inlineError.hidden = false;
-        }
-        return;
-      }
-      syncNetworkWithAddress(address);
-      void runTrack(address, networkSelect.value);
-    }
-
-    window.trackWallet = trackWallet;
-
-    /* type="button" — no native submit; block accidental form submit (e.g. some mobile keyboards). */
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-    });
-
-    const trackBtn = document.getElementById("trackBtn");
-    if (trackBtn) {
-      trackBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        window.trackWallet();
-      });
-    }
-
-    walletInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        window.trackWallet();
-      }
-    });
-
-    walletInput.addEventListener("input", (e) => {
-      if (inlineError) inlineError.hidden = true;
-      syncNetworkWithAddress(e.target.value);
-    });
-
-    walletInput.addEventListener("paste", () => {
-      requestAnimationFrame(() => syncNetworkWithAddress(walletInput.value));
-    });
-
-    walletInput.addEventListener("drop", () => {
-      requestAnimationFrame(() => syncNetworkWithAddress(walletInput.value));
-    });
-
-    if (inlineError) {
-      inlineError.hidden = true;
-      inlineError.textContent = "";
-    }
-
-    if (demoBtn) {
-      demoBtn.addEventListener("click", () => {
-        walletInput.value = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
-        networkSelect.value = "eth";
-        window.trackWallet();
-      });
-    }
-
-    if (retryBtn) {
-      retryBtn.addEventListener("click", () => {
-        if (!lastRequest) return;
-        runTrack(lastRequest.address, lastRequest.network);
-      });
-    }
-
-    const currencyToggle = document.getElementById("currencyToggle");
-    if (currencyToggle) {
-      currencyToggle.addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-currency]");
-        if (!btn || !latestPayload) return;
-        currencyToggle.querySelectorAll("button[data-currency]").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        window.TrackraUI.setCurrencyMode(btn.dataset.currency);
-        window.TrackraUI.renderTokens(latestPayload.tokens, latestPayload.ngnRate);
-        window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
-      });
-    }
-
-    const txFilters = document.getElementById("txFilters");
-    if (txFilters) {
-      txFilters.addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-filter]");
-        if (!btn || !latestPayload) return;
-        txFilters.querySelectorAll("button[data-filter]").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        window.TrackraUI.setTxFilter(btn.dataset.filter);
-        window.TrackraUI.renderTransactions(latestPayload.txs, latestPayload.address, latestPayload.ngnRate);
-      });
-    }
-
-    let startY = 0;
-    let pulling = false;
-    window.addEventListener("touchstart", (e) => {
-      if (window.scrollY === 0) {
-        startY = e.touches[0].clientY;
-        pulling = true;
-      }
-    }, { passive: true });
-
-    window.addEventListener("touchmove", (e) => {
-      if (!pulling || !pullSpinner) return;
-      const delta = e.touches[0].clientY - startY;
-      if (delta > 12) pullSpinner.classList.add("show");
-    }, { passive: true });
-
-    window.addEventListener("touchend", async (e) => {
-      if (!pulling) return;
-      const endY = e.changedTouches[0].clientY;
-      const delta = endY - startY;
-      pulling = false;
-      if (delta >= 80 && lastRequest) {
-        await runTrack(lastRequest.address, lastRequest.network);
-      }
-      if (pullSpinner) pullSpinner.classList.remove("show");
-    });
-  }
-
-  if (isLanding) {
-    setupLanding();
-  } else {
-    setupTracker();
-  }
-})();
+window.TrackraAPI = {
+  getNgnRate,
+  fetchMoralisTokens,
+  fetchMoralisTransactions,
+  fetchEvmNativeSpotPrices,
+  fetchSolanaBalance,
+  fetchSolanaTokens,
+  fetchSolanaTransactions,
+  fetchSolanaSpotPrices,
+  fetchSolanaMintPrices
+};
