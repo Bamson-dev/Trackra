@@ -397,26 +397,6 @@
       }
     }
 
-    /**
-     * Reads wallet + network from the form, validates, shows loading via runTrack,
-     * then fetches (Moralis/EVM via TrackraAPI, Solana via RPC + Helius txs) and renders.
-     * @returns {void}
-     */
-    function trackWallet() {
-      const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!address) {
-        if (inlineError) {
-          inlineError.textContent = "⚠ Enter a wallet address.";
-          inlineError.hidden = false;
-        }
-        return;
-      }
-      syncNetworkWithAddress(address);
-      void runTrack(address, networkSelect.value);
-    }
-
-    window.trackWallet = trackWallet;
-
     /* type="button" — no native submit; block accidental form submit (e.g. some mobile keyboards). */
     form.addEventListener("submit", (e) => {
       e.preventDefault();
@@ -520,6 +500,22 @@
       }
       if (pullSpinner) pullSpinner.classList.remove("show");
     });
+
+    // Expose globally for debugging and external callers (e.g. console: trackWallet('0x...', 'eth')).
+    window.trackWallet = (address, network) => {
+      if (address !== undefined) walletInput.value = address || "";
+      if (network) networkSelect.value = network;
+      const clean = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
+      if (!clean) {
+        if (inlineError) {
+          inlineError.textContent = "⚠ Enter a wallet address.";
+          inlineError.hidden = false;
+        }
+        return;
+      }
+      syncNetworkWithAddress(walletInput.value);
+      void runTrack(clean, networkSelect.value);
+    };
   }
 
   if (isLanding) {
