@@ -397,8 +397,12 @@
       }
     }
 
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
+    /**
+     * Reads wallet + network from the form, validates, shows loading via runTrack,
+     * then fetches (Moralis/EVM via TrackraAPI, Solana via RPC + Helius txs) and renders.
+     * @returns {void}
+     */
+    function trackWallet() {
       const address = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!address) {
         if (inlineError) {
@@ -408,7 +412,29 @@
         return;
       }
       syncNetworkWithAddress(address);
-      runTrack(address, networkSelect.value);
+      void runTrack(address, networkSelect.value);
+    }
+
+    window.trackWallet = trackWallet;
+
+    /* type="button" — no native submit; block accidental form submit (e.g. some mobile keyboards). */
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+    });
+
+    const trackBtn = document.getElementById("trackBtn");
+    if (trackBtn) {
+      trackBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        window.trackWallet();
+      });
+    }
+
+    walletInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        window.trackWallet();
+      }
     });
 
     walletInput.addEventListener("input", (e) => {
@@ -433,7 +459,7 @@
       demoBtn.addEventListener("click", () => {
         walletInput.value = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
         networkSelect.value = "eth";
-        runTrack(walletInput.value, "eth");
+        window.trackWallet();
       });
     }
 
