@@ -8,16 +8,12 @@ const CHAIN_MAP = {
   polygon: "polygon"
 };
 
-/** Public RPC — used when Helius rejects the browser origin (common on GitHub Pages until the key’s domain allowlist includes your site). */
 const PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 
 let ngnRateCache = null;
 let solPriceCache = null;
 let evmNativePriceCache = null;
 
-/**
- * POST JSON-RPC to Helius first, then fall back to Solana public RPC (same request body).
- */
 async function postSolanaRpc(method, params) {
   const body = JSON.stringify({
     jsonrpc: "2.0",
@@ -69,34 +65,36 @@ async function getNgnRate() {
 
 async function fetchMoralisTokens(address, network) {
   const chain = CHAIN_MAP[network];
-  const url = new URL(`https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens`);
-  url.searchParams.set("chain", chain);
-  const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
+  const moralisUrl = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=${chain}`;
+  const url = `https://corsproxy.io/?${encodeURIComponent(moralisUrl)}`;
+  
+  const res = await fetch(url, { 
+    headers: { 
+      "X-API-Key": MORALIS_KEY 
+    } 
+  });
+  
   if (!res.ok) {
-    const originHint =
-      res.status === 401 || res.status === 403
-        ? " In Moralis, open this API key → allowed URLs → add your live site (e.g. https://yourname.github.io)."
-        : "";
-    throw new Error(`Token fetch failed (${res.status}).${originHint}`);
+    throw new Error(`Token fetch failed (${res.status})`);
   }
   const json = await res.json();
-  /* Moralis returns { result: [...] } — not a bare array */
   if (Array.isArray(json)) return json;
   return json?.result || [];
 }
 
 async function fetchMoralisTransactions(address, network) {
   const chain = CHAIN_MAP[network];
-  const url = new URL(`https://deep-index.moralis.io/api/v2.2/${address}`);
-  url.searchParams.set("chain", chain);
-  url.searchParams.set("limit", "20");
-  const res = await fetch(url, { headers: { "X-API-Key": MORALIS_KEY } });
+  const moralisUrl = `https://deep-index.moralis.io/api/v2.2/${address}?chain=${chain}&limit=20`;
+  const url = `https://corsproxy.io/?${encodeURIComponent(moralisUrl)}`;
+  
+  const res = await fetch(url, { 
+    headers: { 
+      "X-API-Key": MORALIS_KEY 
+    } 
+  });
+  
   if (!res.ok) {
-    const originHint =
-      res.status === 401 || res.status === 403
-        ? " In Moralis, allow your GitHub Pages URL for this API key."
-        : "";
-    throw new Error(`Transaction fetch failed (${res.status}).${originHint}`);
+    throw new Error(`Transaction fetch failed (${res.status})`);
   }
   const json = await res.json();
   return json?.result || [];
@@ -131,7 +129,6 @@ async function fetchSolanaTransactions(address) {
     }
     return res.json();
   } catch (e) {
-    /* Do not fail the whole tracker — balances/tokens still work via RPC fallback */
     if (typeof console !== "undefined" && console.warn) {
       console.warn("[Trackra] Transaction history unavailable:", e);
     }
@@ -182,9 +179,6 @@ async function fetchSolanaSpotPrices() {
   return solPriceCache;
 }
 
-/**
- * DexScreener allows comma-separated mints (up to ~30 per request). CORS-friendly for public pages.
- */
 async function fetchDexscreenerSolPrices(mints) {
   const byMint = {};
   for (let i = 0; i < mints.length; i += 30) {
@@ -234,7 +228,6 @@ async function fetchJupiterV3MintPrices(mints) {
 async function fetchSolanaMintPrices(mints) {
   const uniqueMints = [...new Set((mints || []).filter(Boolean))];
   if (!uniqueMints.length) return {};
-  /* Run Jupiter v3 and DexScreener in parallel — either can fail (429, rate limits); merge best price per mint. */
   const [jup, dex] = await Promise.all([
     fetchJupiterV3MintPrices(uniqueMints),
     fetchDexscreenerSolPrices(uniqueMints)
