@@ -1,5 +1,4 @@
 (() => {
-  /* Pathname checks break on GitHub Pages (e.g. /repo vs /repo/). Use the tracker form as source of truth. */
   const isLanding = !document.getElementById("trackForm");
   const SOLANA_MINT_MAP = {
     So11111111111111111111111111111111111111112: { symbol: "SOL", name: "Solana" },
@@ -157,7 +156,7 @@
     });
   }
 
-  async function setupTracker() {
+  function setupTracker() {
     const form = document.getElementById("trackForm");
     if (!form) return;
 
@@ -178,17 +177,12 @@
     const updatedTime = document.getElementById("updatedTime");
 
     let lastRequest = null;
-
-    networkSelect.addEventListener("change", () => {
-      if (inlineError) inlineError.hidden = true;
-    });
     let latestPayload = null;
 
     const SOLANA_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
     const SOLANA_FALLBACK_RE = /^(?!0x)[A-Za-z0-9]{32,44}$/;
     const EVM_RE = /^0x[0-9a-fA-F]{40}$/;
 
-    /** Must match validateWallet(solana): strict OR fallback, and never treat 0x as Solana. */
     function looksLikeSolanaAddress(raw) {
       const a = String(raw || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (!a || EVM_RE.test(a)) return false;
@@ -201,10 +195,6 @@
       return "";
     }
 
-    /**
-     * Resolve chain for API + validation. Address shape wins over a buggy <select> (iOS/WebKit often
-     * leaves value as the first option "eth" while the picker UI shows "Solana").
-     */
     function resolveNetwork(address, passedNetwork) {
       const fromSelect = normalizeNetworkKey(networkSelect?.value);
       const fromArg = normalizeNetworkKey(passedNetwork);
@@ -230,7 +220,6 @@
     function validateWallet(address, network) {
       const a = String(address || "").trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
       if (network === "solana") {
-        /* Be permissive to avoid blocking real Solana addresses due clipboard/font ambiguities. */
         return SOLANA_RE.test(a) || SOLANA_FALLBACK_RE.test(a);
       }
       if (network === "eth" || network === "bsc" || network === "polygon") return EVM_RE.test(a);
@@ -385,6 +374,7 @@
         if (updatedTime) updatedTime.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         setState("results");
       } catch (err) {
+        console.error('[Trackra] Error:', err);
         if (errorTitle && errorBody) {
           errorTitle.textContent = "Unable to load this wallet right now";
           const fileProto = window.location.protocol === "file:";
@@ -397,9 +387,25 @@
       }
     }
 
-    /* type="button" — no native submit; block accidental form submit (e.g. some mobile keyboards). */
+    // EXPOSE GLOBALLY IMMEDIATELY
+    window.trackWallet = function(address, network) {
+      if (address !== undefined) walletInput.value = address || "";
+      if (network) networkSelect.value = network;
+      const clean = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
+      if (!clean) {
+        if (inlineError) {
+          inlineError.textContent = "⚠ Enter a wallet address.";
+          inlineError.hidden = false;
+        }
+        return;
+      }
+      syncNetworkWithAddress(walletInput.value);
+      runTrack(clean, networkSelect.value);
+    };
+
     form.addEventListener("submit", (e) => {
       e.preventDefault();
+      window.trackWallet();
     });
 
     const trackBtn = document.getElementById("trackBtn");
@@ -501,21 +507,9 @@
       if (pullSpinner) pullSpinner.classList.remove("show");
     });
 
-    // Expose globally for debugging and external callers (e.g. console: trackWallet('0x...', 'eth')).
-    window.trackWallet = (address, network) => {
-      if (address !== undefined) walletInput.value = address || "";
-      if (network) networkSelect.value = network;
-      const clean = walletInput.value.trim().replace(/[\u200B-\u200D\uFEFF|]/g, "");
-      if (!clean) {
-        if (inlineError) {
-          inlineError.textContent = "⚠ Enter a wallet address.";
-          inlineError.hidden = false;
-        }
-        return;
-      }
-      syncNetworkWithAddress(walletInput.value);
-      void runTrack(clean, networkSelect.value);
-    };
+    networkSelect.addEventListener("change", () => {
+      if (inlineError) inlineError.hidden = true;
+    });
   }
 
   if (isLanding) {
