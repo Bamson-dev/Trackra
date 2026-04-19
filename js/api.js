@@ -104,11 +104,7 @@ async function fetchMoralisTransactions(address, network) {
 
 async function fetchSolanaBalance(address) {
   const json = await postSolanaRpc("getBalance", [address]);
-  const balance = (json?.result?.value || 0) / 1e9;
-  // #region agent log
-  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N2',location:'js/api.js:109',message:'solana balance fetched',data:{addressPrefix:String(address||'').slice(0,6),balance},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-  return balance;
+  return (json?.result?.value || 0) / 1e9;
 }
 
 async function fetchSolanaTokens(address) {
@@ -117,11 +113,7 @@ async function fetchSolanaTokens(address) {
     { programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
     { encoding: "jsonParsed" }
   ]);
-  const accounts = json?.result?.value || [];
-  // #region agent log
-  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N2',location:'js/api.js:119',message:'solana token accounts fetched',data:{addressPrefix:String(address||'').slice(0,6),accountCount:accounts.length},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-  return accounts;
+  return json?.result?.value || [];
 }
 
 async function fetchSolanaTransactions(address) {
@@ -184,14 +176,8 @@ async function fetchSolanaSpotPrices() {
       JUP: Number(json?.["jupiter-exchange-solana"]?.usd || 0),
       BONK: Number(json?.bonk?.usd || 0)
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N3',location:'js/api.js:181',message:'solana prices fetched',data:{SOL:solPriceCache.SOL,USDT:solPriceCache.USDT,USDC:solPriceCache.USDC},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   } catch {
     solPriceCache = { SOL: 0, USDT: 1, USDC: 1, MSOL: 0, JUP: 0, BONK: 0 };
-    // #region agent log
-    fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'initial-2',hypothesisId:'N3',location:'js/api.js:186',message:'solana prices fallback used',data:{SOL:0,USDT:1,USDC:1},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   }
   return solPriceCache;
 }
@@ -229,7 +215,8 @@ async function fetchJupiterV3MintPrices(mints) {
     const chunk = mints.slice(i, i + 50);
     const url = `https://api.jup.ag/price/v3?ids=${chunk.join(",")}`;
     try {
-      const res = await fetch(url);
+      let res = await fetch(url);
+      if (res.status === 429) res = await fetch(url);
       if (!res.ok) continue;
       const json = await res.json();
       if (!json || typeof json !== "object") continue;
@@ -247,18 +234,18 @@ async function fetchJupiterV3MintPrices(mints) {
 async function fetchSolanaMintPrices(mints) {
   const uniqueMints = [...new Set((mints || []).filter(Boolean))];
   if (!uniqueMints.length) return {};
-  /* lite-api.jup.ag/price/v2 returns 404 (route removed). Use api.jup.ag/price/v3 (verified 200 + CORS for github.io). */
-  const byMint = await fetchJupiterV3MintPrices(uniqueMints);
-  const missing = uniqueMints.filter((m) => !Number(byMint[m] || 0));
-  if (missing.length) {
-    const dex = await fetchDexscreenerSolPrices(missing);
-    missing.forEach((m) => {
-      if (Number(dex[m] || 0) > 0) byMint[m] = dex[m];
-    });
-  }
-  // #region agent log
-  fetch('http://127.0.0.1:7889/ingest/485cd955-1c15-4f9c-9862-3f57fb0a2ed8',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f87d21'},body:JSON.stringify({sessionId:'f87d21',runId:'post-fix-4',hypothesisId:'F4',location:'js/api.js:268',message:'solana mint prices merged',data:{requested:uniqueMints.length,priced:Object.values(byMint).filter((v)=>Number(v)>0).length},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
+  /* Run Jupiter v3 and DexScreener in parallel — either can fail (429, rate limits); merge best price per mint. */
+  const [jup, dex] = await Promise.all([
+    fetchJupiterV3MintPrices(uniqueMints),
+    fetchDexscreenerSolPrices(uniqueMints)
+  ]);
+  const byMint = {};
+  uniqueMints.forEach((m) => {
+    const a = Number(jup[m] || 0);
+    const b = Number(dex[m] || 0);
+    const best = Math.max(a, b);
+    if (best > 0) byMint[m] = best;
+  });
   return byMint;
 }
 
